@@ -1,0 +1,1 @@
+export const items = (count: number) => Array(count).fill(undefined);

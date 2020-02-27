@@ -1,9 +1,10 @@
 import React, { useContext, useState, useEffect } from 'react'
 import { observer } from 'mobx-react'
 
-import { World, Bed, Harvested, Plants, BedSection } from './logic'
+import { World, Bed, Harvested, Plants, BedSection, WeatherInfo } from './logic'
 
-const WorldContext = React.createContext<World>(new World())
+const TimeDilation = 60 * 60 * 6
+const WorldContext = React.createContext<World>(new World(TimeDilation, Date.now()))
 
 const useWorld = () => {
   return useContext(WorldContext)
@@ -17,19 +18,13 @@ const useNow = (seconds: number):number => {
     }, seconds * 1000)
     return () => clearInterval(id)
   }, [ seconds ])
-  return now / 1000
-}
-
-const useUpdateEvery = (seconds: number, updateFn: (now: number) => void, deps?: React.DependencyList | undefined):void => {
-  const now = useNow(seconds)
-  useEffect(() => {
-    updateFn(now)
-  }, deps === undefined ? [ now ] : deps.concat(now))
+  return now
 }
 
 export const WorldView: React.FC = observer(() => {
   const world = useWorld()
   const now = useNow(1)
+  useEffect(() => world.tick(now))
 
   const canPlant = world.canPlant(now)
   const canHarvest = world.canHarvest(now)
@@ -54,9 +49,10 @@ export const WorldView: React.FC = observer(() => {
     <div>
       <h1>my garden</h1>
       <div style={{display: 'flex'}}>
-        <div>
-          {world.beds.map(b => (
-            <BedView now={now} bed={b} />
+        <div style={{minWidth: '360px'}}>
+          <WeatherView day={world.date(now)} weather={world.weather.on(now)} />
+          {world.beds.map((b, i) => (
+            <BedView key={i} now={now} bed={b} />
           ))}
         </div>
         <div>
@@ -71,6 +67,19 @@ export const WorldView: React.FC = observer(() => {
   )
 })
 
+const WeatherView: React.FC<{day: Date, weather: WeatherInfo}> = ({day, weather}) => {
+  return (
+    <div>
+      <p>
+        date: {day.toLocaleDateString()}
+      </p>
+      <p>
+        temperature: {Math.round(weather.temperature)}℉
+      </p>
+    </div>
+  )
+}
+
 const BedView: React.FC<{now: number, bed: Bed}> = observer(({now, bed}) => {
   return (
     <div style={{
@@ -82,7 +91,7 @@ const BedView: React.FC<{now: number, bed: Bed}> = observer(({now, bed}) => {
       height: '50px'
     }}>
       {bed.sections.map((s, i) => {
-        return <BedSectionView now={now} section={s} />
+        return <BedSectionView key={i} now={now} section={s} />
       })}
     </div>
   )
@@ -127,7 +136,7 @@ const StoreView: React.FC<{stores: Harvested[]}> = observer(({stores}) => {
     <div>
       <ul>
         {Object.entries(counts).map(([plantKind, count]) => {
-          return <li>{plantKind}: {count}</li>
+          return <li key={plantKind}>{plantKind}: {count}</li>
         })}
       </ul>
     </div>

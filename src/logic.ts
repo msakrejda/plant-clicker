@@ -1,4 +1,5 @@
 import { observable, action } from 'mobx'
+import { items } from './util'
 
 export const random = {
   number: (upTo: number = 1, startingAt: number = 0): number => Math.random() * (upTo - startingAt) + startingAt,
@@ -9,23 +10,23 @@ export const random = {
 
 export type PlantInfo = {
   icon: string
-  germinationTime: number
-  productionTime: number
+  germinationScore: number
+  productionScore: number
   lifeSpan: number
 }
 
 export const Plants = {
   tomato: {
     icon: '🍅',
-    germinationTime: 10,
-    productionTime: 50,
-    lifeSpan: 100,
+    germinationScore: 10,
+    productionScore: 50,
+    lifeSpan: 100_000,
   },
   kale: {
     icon: '💩',
-    germinationTime: 20,
-    productionTime: 30,
-    lifeSpan: 80,
+    germinationScore: 20,
+    productionScore: 30,
+    lifeSpan: 80_000,
   },
 } as const
 
@@ -34,6 +35,7 @@ export type PlantKind = keyof typeof Plants
 export type PlantState = 'germinating' | 'growing' | 'producing' | 'dead'
 
 export class Plant {
+  private points: number = 0;
   constructor(readonly plantedOn: number, readonly kind: PlantKind) {}
 
   state (now: number): PlantState {
@@ -41,12 +43,22 @@ export class Plant {
     const elapsed = now - this.plantedOn
     if (elapsed > info.lifeSpan) {
       return 'dead'
-    } else if (elapsed > info.productionTime) {
+    } else if (this.points > info.productionScore) {
       return 'producing'
-    } else if (elapsed > info.germinationTime) {
+    } else if (this.points > info.germinationScore) {
       return 'growing'
     } else {
       return 'germinating'
+    }
+  }
+
+  tick (world: World, now: number): void {
+    if (world.weather.on(now).temperature > 60) {
+      this.points += 2
+    } else if (world.weather.on(now).temperature > 80) {
+      this.points += 3
+    } else {
+      this.points += 1
     }
   }
 }
@@ -57,6 +69,10 @@ export class Harvested {
 
 export class BedSection {
   @observable item: Plant | undefined
+
+  tick (world: World, now: number) {
+    this.item?.tick(world, now)
+  }
 
   canPlant (now: number): boolean {
     return this.item === undefined || this.item.state(now) === 'dead'
@@ -81,7 +97,11 @@ export class BedSection {
 }
 
 export class Bed {
-  @observable sections: BedSection[] = Array(8).fill(undefined).map(s => new BedSection())
+  @observable sections: BedSection[] = items(8).map(_s => new BedSection())
+
+  tick (world: World, now: number) {
+    this.sections.forEach(s => s.tick(world, now))
+  }
 
   canPlant (now: number) {
     return this.sections.some(s => s.canPlant(now))
@@ -104,9 +124,33 @@ export class Bed {
   }
 }
 
+export type WeatherInfo = {
+  temperature: number;
+}
+
+export class Weather {
+  on (now: number): WeatherInfo {
+    return {
+      temperature:  50 + ((now / 1000) % 30)
+    }
+  }
+}
+
 export class World {
   @observable beds: Bed[] = []
   @observable stores: Harvested[] = []
+  @observable weather: Weather = new Weather()
+
+  constructor (readonly timeDilation: number, readonly epoch: number) {}
+
+  tick (now: number) {
+    this.beds.forEach(b => b.tick(this, now))
+  }
+
+  date (now: number) {
+    const elapsed = now - this.epoch
+    return new Date(this.epoch + elapsed * this.timeDilation)
+  }
 
   @action addBed () {
     this.beds.push(new Bed())
